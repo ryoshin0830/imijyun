@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { DndContext, DragEndEvent, closestCorners } from "@dnd-kit/core";
+import { 
+  DndContext, 
+  DragEndEvent, 
+  DragStartEvent,
+  closestCorners,
+  DragOverlay,
+  useSensor,
+  useSensors,
+  PointerSensor
+} from "@dnd-kit/core";
 import { motion, AnimatePresence } from "framer-motion";
 import Tutorial from "./components/Tutorial";
 import LessonSelector from "./components/LessonSelector";
@@ -39,6 +48,15 @@ export default function HomePage() {
   const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
   const [showHint, setShowHint] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   const lessons = getAllLessons();
   const currentLesson = lessons[currentLessonIndex];
@@ -64,6 +82,10 @@ export default function HomePage() {
     setAttempts(0);
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -73,7 +95,7 @@ export default function HomePage() {
     if (!draggedWord) return;
 
     const targetBox = BOXES.find(box => box.id === over.id);
-    if (targetBox && targetBox.accepts.includes(draggedWord.type)) {
+    if (targetBox) {
       // 既存の単語を戻す
       if (boxContents[over.id]) {
         setAvailableWords(prev => [...prev, boxContents[over.id]!]);
@@ -84,7 +106,20 @@ export default function HomePage() {
         [over.id]: draggedWord,
       }));
       setAvailableWords(prev => prev.filter(w => w.id !== active.id));
+      
+      // 間違った配置の場合は視覚的フィードバック（振動効果）
+      if (!targetBox.accepts.includes(draggedWord.type)) {
+        const element = document.getElementById(`box-${over.id}`);
+        if (element) {
+          element.classList.add('shake-animation');
+          setTimeout(() => {
+            element.classList.remove('shake-animation');
+          }, 500);
+        }
+      }
     }
+    
+    setActiveId(null);
   };
 
   const checkAnswer = () => {
@@ -198,7 +233,9 @@ export default function HomePage() {
           </div>
 
           <DndContext
+            sensors={sensors}
             collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
@@ -219,12 +256,27 @@ export default function HomePage() {
                         ? boxContents[box.id]?.type === box.accepts[0]
                         : undefined
                     }
+                    isWrongType={
+                      boxContents[box.id] ? !box.accepts.includes(boxContents[box.id]?.type || "") : false
+                    }
                   />
                 );
               })}
             </div>
 
             <WordBankEnhanced words={availableWords} showHint={showHint} />
+            
+            <DragOverlay>
+              {activeId ? (
+                <motion.div
+                  initial={{ scale: 1.1 }}
+                  animate={{ scale: 1.15 }}
+                  className="px-4 py-3 rounded-lg font-semibold text-gray-800 bg-white border-2 border-blue-400 shadow-2xl cursor-grabbing"
+                >
+                  {availableWords.find(w => w.id === activeId)?.text}
+                </motion.div>
+              ) : null}
+            </DragOverlay>
           </DndContext>
 
           <div className="mt-6 flex gap-4 justify-center">

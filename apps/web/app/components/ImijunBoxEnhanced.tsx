@@ -10,6 +10,7 @@ interface ImijunBoxEnhancedProps {
   content: any;
   isHighlighted?: boolean;
   isCorrect?: boolean;
+  isWrongType?: boolean;
 }
 
 export default function ImijunBoxEnhanced({
@@ -19,6 +20,7 @@ export default function ImijunBoxEnhanced({
   content,
   isHighlighted = false,
   isCorrect,
+  isWrongType = false,
 }: ImijunBoxEnhancedProps) {
   const { isOver, setNodeRef } = useDroppable({
     id: id,
@@ -26,6 +28,7 @@ export default function ImijunBoxEnhanced({
 
   return (
     <motion.div
+      id={`box-${id}`}
       ref={setNodeRef}
       animate={{
         scale: isHighlighted ? 1.05 : 1,
@@ -37,6 +40,7 @@ export default function ImijunBoxEnhanced({
         ${color} ${isOver ? "ring-4 ring-blue-400 scale-105" : ""}
         ${isCorrect === true ? "ring-4 ring-green-400" : ""}
         ${isCorrect === false ? "ring-4 ring-red-400" : ""}
+        ${isWrongType ? "ring-4 ring-orange-400" : ""}
       `}
     >
       <div className="p-2 text-center">
