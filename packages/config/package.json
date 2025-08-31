@@ -1,0 +1,9 @@
+{
+  "name": "@imijun/config",
+  "version": "0.0.1",
+  "private": true,
+  "files": [
+    "eslint-preset.js",
+    "tsconfig.base.json"
+  ]
+}
