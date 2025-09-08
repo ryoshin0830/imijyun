@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -43,16 +43,16 @@ const AnimatedCard: React.FC<{
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    translateY.value = withSpring(0, {
-      damping: 15,
-      stiffness: 150,
-      mass: 1,
-      delay: delay + (index * 100),
-    });
-    opacity.value = withTiming(1, {
-      duration: Animation.duration.normal,
-      delay: delay + (index * 100),
-    });
+    setTimeout(() => {
+      translateY.value = withSpring(0, {
+        damping: 15,
+        stiffness: 150,
+        mass: 1,
+      });
+      opacity.value = withTiming(1, {
+        duration: Animation.duration.normal,
+      });
+    }, delay + (index * 100));
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -153,7 +153,7 @@ export default function HomeScreen() {
                 onPress={startTutorial}
                 variant="elevated"
                 padding="none"
-                style={[styles.quickCard, styles.tutorialCard]}
+                style={styles.tutorialCard}
               >
                 <LinearGradient
                   colors={[IMIJUN_COLORS.subject, '#5B8DEF']}
@@ -171,7 +171,7 @@ export default function HomeScreen() {
                 onPress={goToLessons}
                 variant="elevated"
                 padding="none"
-                style={[styles.quickCard, styles.todayCard]}
+                style={styles.todayCard}
               >
                 <LinearGradient
                   colors={[IMIJUN_COLORS.verb, '#E560AA']}
@@ -362,9 +362,27 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   tutorialCard: {
+    flex: 1,
+    height: 140,
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     marginRight: 8,
   },
   todayCard: {
+    flex: 1,
+    height: 140,
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     marginLeft: 8,
   },
   cardGradient: {

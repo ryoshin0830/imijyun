@@ -1,3 +1,15 @@
+/**
+ * 新しいレッスン詳細画面
+ * 
+ * react-native-draxの代わりにreact-native-gesture-handlerと
+ * react-native-reanimatedを使用した実装
+ * 
+ * 主な変更点:
+ * - DraxProviderを削除
+ * - GestureHandlerRootViewを使用
+ * - カスタムのGestureWord/GestureDropBoxコンポーネントを使用
+ * - 座標ベースのドロップ判定
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -20,20 +32,21 @@ import Animated, {
   runOnJS,
   interpolate,
 } from 'react-native-reanimated';
-import { DraxProvider, DraxScrollView } from 'react-native-drax';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useLocalSearchParams, router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
-import DraggableWord from '../../components/DraggableWord';
-import DroppableBox from '../../components/DroppableBox';
+
+// カスタムコンポーネント
+import GestureWord from '../../components/GestureWord';
+import GestureDropBox, { checkDropZone } from '../../components/GestureDropBox';
+
+// Core imports
 import {
   IMIJUN_COLORS,
   IMIJUN_LABELS,
-  ENGLISH_LABELS,
   BOX_ORDER,
-  getLessonById,
   DEMO_LESSONS,
   TUTORIAL_LESSON,
   type Word,
@@ -46,7 +59,7 @@ import { storage } from '../../utils/storage';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// 新しいカラーパレット - より洗練された色合い
+// カラーパレット
 const ENHANCED_COLORS = {
   subject: {
     main: '#60A5FA',
@@ -80,12 +93,11 @@ const ENHANCED_COLORS = {
   },
 };
 
-// Helper function to get all lessons
+// ヘルパー関数
 const getAllLessons = (): Lesson[] => {
   return [TUTORIAL_LESSON, ...DEMO_LESSONS, ...MOBILE_LESSONS];
 };
 
-// Helper function to find lesson including mobile lessons
 const findLesson = (id: string): Lesson | undefined => {
   return getAllLessons().find(lesson => lesson.id === id);
 };
@@ -102,13 +114,17 @@ export default function LessonDetailScreen() {
   const [streak, setStreak] = useState(0);
   const [timeStarted, setTimeStarted] = useState<number>(0);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  
+  // ドロップゾーンの座標を管理
+  const dropZonesRef = useRef<{ [key: string]: { x: number; y: number; width: number; height: number } }>({});
 
-  // Animated values for feedback and UI
+  // アニメーション値
   const feedbackOpacity = useSharedValue(0);
   const confettiScale = useSharedValue(0);
   const progressWidth = useSharedValue(0);
   const scoreScale = useSharedValue(1);
 
+  // レッスンの初期化
   useEffect(() => {
     if (id) {
       const foundLesson = findLesson(id);
@@ -124,12 +140,13 @@ export default function LessonDetailScreen() {
         setAvailableWords([...foundLesson.words]);
         setTimeStarted(Date.now());
         
-        // Load previous progress if exists
+        // 進捗をロード
         loadLessonProgress(id);
       }
     }
   }, [id]);
 
+  // レッスン進捗のロード
   const loadLessonProgress = async (lessonId: string) => {
     try {
       const progress = await storage.getLessonProgress(lessonId);
@@ -141,8 +158,8 @@ export default function LessonDetailScreen() {
     }
   };
 
+  // プログレスバーの更新
   useEffect(() => {
-    // プログレスバーのアニメーション
     const filledBoxes = boxStates.filter(box => box.word !== null).length;
     const totalBoxes = boxStates.length;
     const progress = totalBoxes > 0 ? (filledBoxes / totalBoxes) * 100 : 0;
@@ -150,8 +167,69 @@ export default function LessonDetailScreen() {
       damping: 15,
       stiffness: 100,
     });
-  }, [boxStates]);
+  }, [boxStates, progressWidth]);
 
+  // ドロップゾーンの座標を登録
+  const handleDropZoneMeasure = (id: string, x: number, y: number, width: number, height: number) => {
+    dropZonesRef.current[id] = { x, y, width, height };
+  };
+
+  // ドラッグ終了時のハンドラー
+  const handleWordDrop = (word: Word, x: number, y: number) => {
+    const droppedZone = checkDropZone(x, y, dropZonesRef.current);
+    
+    if (droppedZone && droppedZone === word.type) {
+      // 正しいボックスにドロップ
+      handleDrop(word, droppedZone as BoxType);
+    } else if (droppedZone) {
+      // 間違ったボックスにドロップ
+      Alert.alert(
+        '間違いです',
+        `"${word.text}"は「${IMIJUN_LABELS[word.type]}」のボックスに入れてください。`,
+        [{ text: 'OK' }]
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  };
+
+  // 単語をボックスに配置
+  const handleDrop = (word: Word, boxType: BoxType) => {
+    // 単語を利用可能リストから削除
+    setAvailableWords(prev => prev.filter(w => w.id !== word.id));
+    
+    // ボックスに単語を配置
+    setBoxStates(prev => {
+      const newStates = prev.map(box =>
+        box.type === boxType
+          ? { ...box, word, isHighlighted: false }
+          : box
+      );
+      
+      // 全てのボックスが埋まったら自動チェック
+      if (newStates.every(box => box.word !== null)) {
+        setTimeout(checkAnswer, 500);
+      }
+      
+      return newStates;
+    });
+  };
+
+  // ボックスから単語を削除
+  const removeWordFromBox = (boxType: BoxType) => {
+    const box = boxStates.find(b => b.type === boxType);
+    if (box && box.word) {
+      setAvailableWords(prev => [...prev, box.word!]);
+      setBoxStates(prev =>
+        prev.map(b =>
+          b.type === boxType
+            ? { ...b, word: null, isHighlighted: false }
+            : b
+        )
+      );
+    }
+  };
+
+  // 答え合わせ
   const checkAnswer = async () => {
     if (!lesson) return;
 
@@ -183,7 +261,7 @@ export default function LessonDetailScreen() {
         console.error('Error saving progress:', error);
       }
       
-      // スコアアニメーション
+      // アニメーション
       scoreScale.value = withSequence(
         withSpring(1.3, { damping: 5 }),
         withSpring(1, { damping: 10 })
@@ -197,7 +275,7 @@ export default function LessonDetailScreen() {
         stiffness: 100,
       });
       
-      // 完了モーダルを表示
+      // 完了モーダル表示
       setTimeout(() => {
         setShowCompletionModal(true);
       }, 2000);
@@ -215,60 +293,14 @@ export default function LessonDetailScreen() {
     });
   };
 
+  // フィードバックを隠す
   const hideFeedback = () => {
     feedbackOpacity.value = withTiming(0);
     confettiScale.value = withTiming(0);
     setShowFeedback(false);
   };
 
-  const handleDrop = (word: Word, boxType: BoxType) => {
-    // Check if word type matches box type
-    if (word.type === boxType) {
-      // Remove word from available words
-      setAvailableWords(prev => prev.filter(w => w.id !== word.id));
-      
-      // Add word to box
-      setBoxStates(prev => {
-        const newStates = prev.map(box =>
-          box.type === boxType
-            ? { ...box, word, isHighlighted: false }
-            : box
-        );
-        
-        // Auto-check answer if all boxes are filled
-        if (newStates.every(box => box.word !== null)) {
-          setTimeout(checkAnswer, 500);
-        }
-        
-        return newStates;
-      });
-    } else {
-      // Wrong placement - show error
-      Alert.alert(
-        '間違いです',
-        `"${word.text}"は「${IMIJUN_LABELS[word.type]}」のボックスに入れてください。`,
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const removeWordFromBox = (boxType: BoxType) => {
-    const box = boxStates.find(b => b.type === boxType);
-    if (box && box.word) {
-      setAvailableWords(prev => [...prev, box.word!]);
-      setBoxStates(prev =>
-        prev.map(b =>
-          b.type === boxType
-            ? { ...b, word: null, isHighlighted: false }
-            : b
-        )
-      );
-      if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-    }
-  };
-
+  // レッスンをリセット
   const resetLesson = () => {
     if (!lesson) return;
     
@@ -286,6 +318,7 @@ export default function LessonDetailScreen() {
     confettiScale.value = 0;
   };
 
+  // ナビゲーション
   const goBack = () => {
     router.back();
   };
@@ -302,29 +335,16 @@ export default function LessonDetailScreen() {
       setShowCompletionModal(false);
       resetLesson();
     } else {
-      // No more lessons, go back to list
       router.replace('/(tabs)/lessons');
     }
   };
 
-  const goToPreviousLesson = () => {
-    if (!lesson) return;
-    
-    const prevLessonId = getPreviousLessonId(lesson.id);
-    if (prevLessonId) {
-      router.replace({
-        pathname: '/lesson/[id]',
-        params: { id: prevLessonId }
-      });
-    }
-  };
-
+  // アニメーションスタイル
   const feedbackAnimatedStyle = useAnimatedStyle(() => ({
     opacity: feedbackOpacity.value,
     transform: [{ scale: confettiScale.value * 0.1 + 0.9 }],
   }));
 
-  // プログレスバーのアニメーションスタイル
   const progressAnimatedStyle = useAnimatedStyle(() => ({
     width: `${progressWidth.value}%`,
   }));
@@ -339,7 +359,7 @@ export default function LessonDetailScreen() {
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>レッスンが見つかりません</Text>
           <TouchableOpacity style={styles.backButton} onPress={goBack}>
-            <Text style={styles.backButtonText}>戻る</Text>
+            <Text style={styles.buttonText}>戻る</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -348,17 +368,16 @@ export default function LessonDetailScreen() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <DraxProvider>
-        <LinearGradient
-          colors={['#f8f9fa', '#e9ecef']}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <SafeAreaView style={styles.safeArea}>
-          <DraxScrollView 
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-          {/* Enhanced Header */}
+      <LinearGradient
+        colors={['#f8f9fa', '#e9ecef']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ヘッダー */}
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={goBack}>
               <Svg width="24" height="24" viewBox="0 0 24 24">
@@ -399,7 +418,7 @@ export default function LessonDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Progress Bar */}
+          {/* プログレスバー */}
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
               <Animated.View style={[styles.progressFill, progressAnimatedStyle]}>
@@ -416,7 +435,7 @@ export default function LessonDetailScreen() {
             </Text>
           </View>
 
-          {/* Lesson Info */}
+          {/* レッスン情報 */}
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{lesson.title}</Text>
             <Text style={styles.description}>{lesson.description}</Text>
@@ -433,21 +452,22 @@ export default function LessonDetailScreen() {
             </View>
           </View>
 
-          {/* Enhanced Imijun Boxes */}
+          {/* 意味順ボックス */}
           <View style={styles.boxesContainer}>
             {boxStates.map((box, index) => (
-              <DroppableBox
+              <GestureDropBox
                 key={box.type}
                 boxState={box}
                 colorScheme={ENHANCED_COLORS[box.type]}
                 onReceiveDrop={(word) => handleDrop(word, box.type)}
                 onRemoveWord={() => removeWordFromBox(box.type)}
                 index={index}
+                onLayoutMeasure={handleDropZoneMeasure}
               />
             ))}
           </View>
 
-          {/* Enhanced Word Bank */}
+          {/* 単語バンク */}
           <View style={styles.wordBank}>
             <View style={styles.wordBankHeader}>
               <Text style={styles.wordBankTitle}>単語バンク</Text>
@@ -460,16 +480,17 @@ export default function LessonDetailScreen() {
             </Text>
             <View style={styles.wordsContainer}>
               {availableWords.map((word) => (
-                <DraggableWord
+                <GestureWord
                   key={word.id}
                   word={word}
                   colorScheme={ENHANCED_COLORS[word.type]}
+                  onDragEnd={handleWordDrop}
                 />
               ))}
             </View>
           </View>
 
-          {/* Enhanced Hint */}
+          {/* ヒント */}
           {lesson.hint && (
             <LinearGradient
               colors={['#fff7ed', '#fef3c7']}
@@ -484,9 +505,9 @@ export default function LessonDetailScreen() {
               </View>
             </LinearGradient>
           )}
-          </DraxScrollView>
+        </ScrollView>
 
-        {/* Completion Modal */}
+        {/* 完了モーダル */}
         <Modal
           visible={showCompletionModal}
           transparent={true}
@@ -533,16 +554,6 @@ export default function LessonDetailScreen() {
                       style={styles.buttonGradient}
                     >
                       <Text style={styles.buttonText}>次のレッスンへ</Text>
-                      <Svg width="20" height="20" viewBox="0 0 24 24">
-                        <Path
-                          d="M9 18l6-6-6-6"
-                          stroke="#ffffff"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          fill="none"
-                        />
-                      </Svg>
                     </LinearGradient>
                   </TouchableOpacity>
                   
@@ -558,46 +569,13 @@ export default function LessonDetailScreen() {
           </View>
         </Modal>
 
-        {/* Enhanced Feedback Modal */}
+        {/* フィードバック */}
         {showFeedback && (
           <Animated.View style={[styles.feedback, feedbackAnimatedStyle]}>
             <LinearGradient
               colors={isCorrect ? ['#dcfce7', '#bbf7d0'] : ['#fee2e2', '#fecaca']}
               style={styles.feedbackGradient}
             >
-              {isCorrect && (
-                <View style={styles.confettiContainer}>
-                  {[...Array(6)].map((_, i) => (
-                    <Animated.View
-                      key={i}
-                      style={[
-                        styles.confetti,
-                        {
-                          backgroundColor: ['#60A5FA', '#F472B6', '#FBBF24', '#34D399', '#A78BFA', '#F87171'][i],
-                          transform: [
-                            {
-                              translateY: confettiScale.value * interpolate(
-                                Math.random(),
-                                [0, 1],
-                                [-100, -300]
-                              ),
-                            },
-                            {
-                              translateX: interpolate(
-                                Math.random(),
-                                [0, 1],
-                                [-50, 50]
-                              ),
-                            },
-                            { rotate: `${Math.random() * 360}deg` },
-                          ],
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-              )}
-              
               <Text style={[
                 styles.feedbackEmoji,
                 { fontSize: isCorrect ? 60 : 50 }
@@ -617,31 +595,14 @@ export default function LessonDetailScreen() {
                   {lesson.explanation}
                 </Text>
               )}
-              
-              <View style={styles.feedbackActions}>
-                {isCorrect ? (
-                  <TouchableOpacity style={styles.successButton} onPress={goBack}>
-                    <LinearGradient
-                      colors={['#22c55e', '#16a34a']}
-                      style={styles.buttonGradient}
-                    >
-                      <Text style={styles.buttonText}>次のレッスンへ</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity style={styles.retryButton} onPress={hideFeedback}>
-                    <Text style={styles.retryButtonText}>もう一度</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
             </LinearGradient>
           </Animated.View>
         )}
-        </SafeAreaView>
-      </DraxProvider>
+      </SafeAreaView>
     </GestureHandlerRootView>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -654,7 +615,7 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
   
-  // Header Styles
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -715,7 +676,7 @@ const styles = StyleSheet.create({
     color: '#92400e',
   },
   
-  // Progress Bar Styles
+  // Progress
   progressContainer: {
     marginBottom: 20,
   },
@@ -736,7 +697,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   
-  // Title Section Styles
+  // Title
   titleContainer: {
     alignItems: 'center',
     paddingVertical: 16,
@@ -787,7 +748,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e5e7eb',
   },
   
-  // Boxes Container Styles
+  // Boxes
   boxesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -804,85 +765,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
   },
   
-  // Drop Box Styles
-  dropBoxWrapper: {
-    width: '30%',
-    minWidth: 100,
-    height: 110,
-    margin: 8,
-  },
-  dropBoxGlow: {
-    position: 'absolute',
-    top: -5,
-    left: -5,
-    right: -5,
-    bottom: -5,
-    borderRadius: 16,
-  },
-  dropBox: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 8,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  dropBoxBorder: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 16,
-    borderWidth: 2,
-  },
-  labelContainer: {
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  labelBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  japaneseLabel: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  englishLabel: {
-    fontSize: 10,
-    color: '#ffffff',
-    opacity: 0.9,
-  },
-  wordContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  placedWordContainer: {
-    alignItems: 'center',
-  },
-  placedWordText: {
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  removeIcon: {
-    marginTop: 4,
-    opacity: 0.5,
-  },
-  placeholderContainer: {
-    alignItems: 'center',
-  },
-  placeholderText: {
-    fontSize: 11,
-    marginTop: 4,
-  },
-  
-  // Word Bank Styles
+  // Word Bank
   wordBank: {
     backgroundColor: '#ffffff',
     borderRadius: 24,
@@ -929,41 +812,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   
-  // Word Chip Styles
-  wordChipWrapper: {
-    margin: 6,
-  },
-  wordChip: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-  },
-  wordText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
-    marginRight: 8,
-  },
-  wordTypeIndicator: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  wordTypeText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  
-  // Hint Styles
+  // Hint
   hintContainer: {
     borderRadius: 20,
     padding: 16,
@@ -997,7 +846,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   
-  // Feedback Modal Styles
+  // Feedback
   feedback: {
     position: 'absolute',
     top: screenHeight * 0.25,
@@ -1014,21 +863,6 @@ const styles = StyleSheet.create({
   feedbackGradient: {
     padding: 32,
     alignItems: 'center',
-  },
-  confettiContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confetti: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
   },
   feedbackEmoji: {
     marginBottom: 16,
@@ -1047,47 +881,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     paddingHorizontal: 20,
   },
-  feedbackActions: {
-    width: '100%',
-  },
-  successButton: {
-    borderRadius: 24,
-    overflow: 'hidden',
-  },
-  buttonGradient: {
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-    marginRight: 8,
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  retryButton: {
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: '#dc2626',
-  },
-  retryButtonText: {
-    color: '#dc2626',
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
   
-  // Error Styles
+  // Error
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1099,7 +894,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   
-  // Completion Modal Styles
+  // Completion Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1170,6 +965,18 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     marginBottom: 12,
+  },
+  buttonGradient: {
+    flexDirection: 'row',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
   backToListButton: {
     paddingVertical: 12,

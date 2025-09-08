@@ -57,7 +57,7 @@ export default function LessonsScreen() {
     // Filter by category
     if (selectedCategory !== 'all') {
       const categoryLessonIds = LESSON_CATEGORIES[selectedCategory].lessonIds;
-      filtered = filtered.filter(lesson => categoryLessonIds.includes(lesson.id));
+      filtered = filtered.filter(lesson => (categoryLessonIds as readonly string[]).includes(lesson.id));
     }
     
     return filtered;

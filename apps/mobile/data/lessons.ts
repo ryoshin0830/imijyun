@@ -205,15 +205,15 @@ export const LESSON_CATEGORIES = {
 
 // Helper function to get lessons by category
 export const getLessonsByCategory = (categoryKey: keyof typeof LESSON_CATEGORIES): string[] => {
-  return LESSON_CATEGORIES[categoryKey].lessonIds;
+  return [...LESSON_CATEGORIES[categoryKey].lessonIds];
 };
 
 // Get next lesson ID
 export const getNextLessonId = (currentLessonId: string): string | null => {
   const allLessonIds = Object.values(LESSON_CATEGORIES)
-    .flatMap(category => category.lessonIds);
+    .flatMap(category => [...category.lessonIds]);
   
-  const currentIndex = allLessonIds.indexOf(currentLessonId);
+  const currentIndex = allLessonIds.indexOf(currentLessonId as any);
   if (currentIndex === -1 || currentIndex === allLessonIds.length - 1) {
     return null;
   }
@@ -224,9 +224,9 @@ export const getNextLessonId = (currentLessonId: string): string | null => {
 // Get previous lesson ID
 export const getPreviousLessonId = (currentLessonId: string): string | null => {
   const allLessonIds = Object.values(LESSON_CATEGORIES)
-    .flatMap(category => category.lessonIds);
+    .flatMap(category => [...category.lessonIds]);
   
-  const currentIndex = allLessonIds.indexOf(currentLessonId);
+  const currentIndex = allLessonIds.indexOf(currentLessonId as any);
   if (currentIndex <= 0) {
     return null;
   }
