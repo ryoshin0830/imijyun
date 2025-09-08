@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   DEMO_LESSONS,
   TUTORIAL_LESSON,
@@ -15,6 +18,9 @@ import {
   type Lesson,
   type LessonLevel,
 } from '@imijun/core';
+import { MOBILE_LESSONS, LESSON_CATEGORIES } from '../../data/lessons';
+import { storage, type LessonProgress, type UserStats } from '../../utils/storage';
+import Svg, { Path, Circle } from 'react-native-svg';
 
 const LEVEL_COLORS = {
   beginner: '#22c55e',
@@ -30,11 +36,60 @@ const LEVEL_LABELS = {
 
 export default function LessonsScreen() {
   const [selectedLevel, setSelectedLevel] = useState<LessonLevel | 'all'>('all');
-  const allLessons = [TUTORIAL_LESSON, ...DEMO_LESSONS];
+  const [selectedCategory, setSelectedCategory] = useState<keyof typeof LESSON_CATEGORIES | 'all'>('all');
+  const [lessonProgress, setLessonProgress] = useState<Record<string, LessonProgress>>({});
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Combine all lessons
+  const allLessons = [TUTORIAL_LESSON, ...DEMO_LESSONS, ...MOBILE_LESSONS];
 
-  const filteredLessons = selectedLevel === 'all' 
-    ? allLessons 
-    : allLessons.filter(lesson => lesson.level === selectedLevel);
+  // Filter lessons based on level and category
+  const getFilteredLessons = () => {
+    let filtered = allLessons;
+    
+    // Filter by level
+    if (selectedLevel !== 'all') {
+      filtered = filtered.filter(lesson => lesson.level === selectedLevel);
+    }
+    
+    // Filter by category
+    if (selectedCategory !== 'all') {
+      const categoryLessonIds = LESSON_CATEGORIES[selectedCategory].lessonIds;
+      filtered = filtered.filter(lesson => categoryLessonIds.includes(lesson.id));
+    }
+    
+    return filtered;
+  };
+
+  const filteredLessons = getFilteredLessons();
+
+  // Load progress data
+  const loadProgressData = async () => {
+    try {
+      const [progress, stats] = await Promise.all([
+        storage.getAllLessonProgress(),
+        storage.getUserStats(),
+      ]);
+      setLessonProgress(progress);
+      setUserStats(stats);
+    } catch (error) {
+      console.error('Error loading progress data:', error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProgressData();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadProgressData();
+  };
 
   const handleLessonPress = (lesson: Lesson) => {
     // Navigate to lesson screen with lesson ID
@@ -44,11 +99,90 @@ export default function LessonsScreen() {
     });
   };
 
+  const calculateOverallProgress = () => {
+    const totalLessons = allLessons.length;
+    const completedLessons = Object.values(lessonProgress).filter(p => p.isCompleted).length;
+    return totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0;
+  };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={IMIJUN_COLORS.subject} />
+          <Text style={styles.loadingText}>読み込み中...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
+      <LinearGradient
+        colors={['#f8f9fa', '#e9ecef']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      
+      {/* Header with Stats */}
       <View style={styles.header}>
         <Text style={styles.title}>レッスン選択</Text>
         <Text style={styles.subtitle}>学習したいレッスンを選んでください</Text>
+        
+        {/* User Stats Summary */}
+        {userStats && (
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Svg width="24" height="24" viewBox="0 0 24 24">
+                <Path
+                  d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                  fill="#fbbf24"
+                />
+              </Svg>
+              <Text style={styles.statValue}>{userStats.totalScore}</Text>
+              <Text style={styles.statLabel}>総スコア</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <Svg width="24" height="24" viewBox="0 0 24 24">
+                <Circle cx="12" cy="12" r="10" fill="#34d399" />
+                <Path
+                  d="M9 12l2 2 4-4"
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+              </Svg>
+              <Text style={styles.statValue}>{userStats.lessonsCompleted}</Text>
+              <Text style={styles.statLabel}>完了</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <Text style={styles.streakEmoji}>🔥</Text>
+              <Text style={styles.statValue}>{userStats.currentStreak}</Text>
+              <Text style={styles.statLabel}>連続日数</Text>
+            </View>
+          </View>
+        )}
+        
+        {/* Overall Progress Bar */}
+        <View style={styles.overallProgressContainer}>
+          <Text style={styles.overallProgressLabel}>
+            全体の進捗: {Math.round(calculateOverallProgress())}%
+          </Text>
+          <View style={styles.overallProgressBar}>
+            <LinearGradient
+              colors={['#60a5fa', '#3b82f6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[
+                styles.overallProgressFill,
+                { width: `${calculateOverallProgress()}%` }
+              ]}
+            />
+          </View>
+        </View>
       </View>
 
       {/* Level Filter */}
@@ -92,16 +226,81 @@ export default function LessonsScreen() {
         </ScrollView>
       </View>
 
+      {/* Category Tabs */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.categoryContainer}
+      >
+        <TouchableOpacity
+          style={[
+            styles.categoryTab,
+            selectedCategory === 'all' && styles.categoryTabActive
+          ]}
+          onPress={() => setSelectedCategory('all')}
+        >
+          <Text style={[
+            styles.categoryTabText,
+            selectedCategory === 'all' && styles.categoryTabTextActive
+          ]}>
+            すべて
+          </Text>
+        </TouchableOpacity>
+        
+        {Object.entries(LESSON_CATEGORIES).map(([key, category]) => (
+          <TouchableOpacity
+            key={key}
+            style={[
+              styles.categoryTab,
+              selectedCategory === key && styles.categoryTabActive
+            ]}
+            onPress={() => setSelectedCategory(key as keyof typeof LESSON_CATEGORIES)}
+          >
+            <Text style={[
+              styles.categoryTabText,
+              selectedCategory === key && styles.categoryTabTextActive
+            ]}>
+              {category.title}
+            </Text>
+            {selectedCategory === key && (
+              <Text style={styles.categoryDescription}>
+                {category.description}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       {/* Lessons List */}
-      <ScrollView style={styles.lessonsList} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.lessonsList} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[IMIJUN_COLORS.subject]}
+            tintColor={IMIJUN_COLORS.subject}
+          />
+        }
+      >
         {filteredLessons.map((lesson, index) => (
           <LessonCard
             key={lesson.id}
             lesson={lesson}
             index={index}
+            progress={lessonProgress[lesson.id]}
             onPress={() => handleLessonPress(lesson)}
           />
         ))}
+        
+        {filteredLessons.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              該当するレッスンがありません
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -110,8 +309,9 @@ export default function LessonsScreen() {
 const LessonCard: React.FC<{
   lesson: Lesson;
   index: number;
+  progress?: LessonProgress;
   onPress: () => void;
-}> = ({ lesson, index, onPress }) => {
+}> = ({ lesson, index, progress, onPress }) => {
   const levelColor = LEVEL_COLORS[lesson.level];
   const levelLabel = LEVEL_LABELS[lesson.level];
 
@@ -119,19 +319,78 @@ const LessonCard: React.FC<{
   const wordTypes = [...new Set(lesson.words.map(word => word.type))];
   const previewColors = wordTypes.map(type => IMIJUN_COLORS[type]);
 
+  // Calculate progress percentage
+  const progressPercentage = progress?.isCompleted ? 100 : progress?.attempts ? 50 : 0;
+
   return (
     <TouchableOpacity style={styles.lessonCard} onPress={onPress}>
+      {progress?.isCompleted && (
+        <LinearGradient
+          colors={['rgba(34, 197, 94, 0.05)', 'rgba(34, 197, 94, 0.02)']}
+          style={StyleSheet.absoluteFillObject}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      )}
+      
       <View style={styles.lessonHeader}>
-        <View style={styles.lessonNumber}>
-          <Text style={styles.lessonNumberText}>{index + 1}</Text>
+        <View style={[
+          styles.lessonNumber,
+          progress?.isCompleted && styles.lessonNumberCompleted
+        ]}>
+          {progress?.isCompleted ? (
+            <Svg width="20" height="20" viewBox="0 0 24 24">
+              <Path
+                d="M9 12l2 2 4-4"
+                stroke="#22c55e"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </Svg>
+          ) : (
+            <Text style={styles.lessonNumberText}>{index + 1}</Text>
+          )}
         </View>
         <View style={[styles.levelBadge, { backgroundColor: levelColor }]}>
           <Text style={styles.levelBadgeText}>{levelLabel}</Text>
         </View>
       </View>
 
-      <Text style={styles.lessonTitle}>{lesson.title}</Text>
+      <Text style={[
+        styles.lessonTitle,
+        progress?.isCompleted && styles.lessonTitleCompleted
+      ]}>
+        {lesson.title}
+      </Text>
       <Text style={styles.lessonDescription}>{lesson.description}</Text>
+
+      {/* Stats Row */}
+      {progress && (
+        <View style={styles.statsRow}>
+          {progress.bestScore > 0 && (
+            <View style={styles.statBadge}>
+              <Text style={styles.statBadgeIcon}>⭐</Text>
+              <Text style={styles.statBadgeText}>{progress.bestScore}</Text>
+            </View>
+          )}
+          {progress.attempts > 0 && (
+            <View style={styles.statBadge}>
+              <Text style={styles.statBadgeIcon}>📝</Text>
+              <Text style={styles.statBadgeText}>{progress.attempts}回</Text>
+            </View>
+          )}
+          {progress.timeSpent && progress.timeSpent > 0 && (
+            <View style={styles.statBadge}>
+              <Text style={styles.statBadgeIcon}>⏱</Text>
+              <Text style={styles.statBadgeText}>
+                {Math.round(progress.timeSpent / 60)}分
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Word Type Preview */}
       <View style={styles.wordTypePreview}>
@@ -146,19 +405,34 @@ const LessonCard: React.FC<{
         </View>
       </View>
 
-      {/* Progress Indicator (placeholder) */}
+      {/* Progress Indicator */}
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
-          <View style={[
-            styles.progressFill,
-            { 
-              width: lesson.id === 'tutorial' ? '100%' : '0%',
-              backgroundColor: IMIJUN_COLORS.subject 
+          <LinearGradient
+            colors={
+              progress?.isCompleted 
+                ? ['#22c55e', '#16a34a']
+                : progressPercentage > 0
+                ? ['#60a5fa', '#3b82f6']
+                : ['#e5e7eb', '#e5e7eb']
             }
-          ]} />
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[
+              styles.progressFill,
+              { width: `${progressPercentage}%` }
+            ]}
+          />
         </View>
-        <Text style={styles.progressText}>
-          {lesson.id === 'tutorial' ? '完了済み' : '未完了'}
+        <Text style={[
+          styles.progressText,
+          progress?.isCompleted && styles.progressTextCompleted
+        ]}>
+          {progress?.isCompleted 
+            ? '完了済み' 
+            : progress?.attempts 
+            ? `挑戦中 (${progress.attempts}回)` 
+            : '未開始'}
         </Text>
       </View>
     </TouchableOpacity>
@@ -170,10 +444,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6b7280',
+  },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
     alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
   },
   title: {
     fontSize: 28,
@@ -185,6 +478,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6b7280',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginBottom: 20,
+  },
+  statCard: {
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 16,
+    minWidth: 90,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginTop: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  streakEmoji: {
+    fontSize: 24,
+  },
+  overallProgressContainer: {
+    width: '100%',
+    paddingHorizontal: 20,
+  },
+  overallProgressLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  overallProgressBar: {
+    height: 8,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  overallProgressFill: {
+    height: '100%',
+    borderRadius: 4,
   },
   filterContainer: {
     paddingHorizontal: 20,
@@ -301,6 +641,82 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 12,
     color: '#9ca3af',
+    fontWeight: '500',
+  },
+  progressTextCompleted: {
+    color: '#22c55e',
+    fontWeight: '600',
+  },
+  categoryContainer: {
+    paddingHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  categoryTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  categoryTabActive: {
+    backgroundColor: '#dbeafe',
+    borderColor: '#60a5fa',
+  },
+  categoryTabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  categoryTabTextActive: {
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
+  categoryDescription: {
+    fontSize: 11,
+    color: '#60a5fa',
+    marginTop: 2,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#9ca3af',
+  },
+  lessonNumberCompleted: {
+    backgroundColor: '#dcfce7',
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  lessonTitleCompleted: {
+    color: '#16a34a',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    marginVertical: 8,
+    gap: 8,
+  },
+  statBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statBadgeIcon: {
+    fontSize: 12,
+    marginRight: 4,
+  },
+  statBadgeText: {
+    fontSize: 11,
+    color: '#6b7280',
     fontWeight: '500',
   },
 });

@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Platform,
   ScrollView,
+  Modal,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -16,41 +17,34 @@ import Animated, {
   withSpring,
   withTiming,
   withSequence,
-  withDelay,
   runOnJS,
   interpolate,
-  Easing,
 } from 'react-native-reanimated';
-import {
-  Gesture,
-  GestureDetector,
-  GestureHandlerRootView,
-} from 'react-native-gesture-handler';
+import { DraxProvider, DraxScrollView } from 'react-native-drax';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useLocalSearchParams, router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
+import DraggableWord from '../../components/DraggableWord';
+import DroppableBox from '../../components/DroppableBox';
 import {
   IMIJUN_COLORS,
   IMIJUN_LABELS,
   ENGLISH_LABELS,
   BOX_ORDER,
   getLessonById,
+  DEMO_LESSONS,
+  TUTORIAL_LESSON,
   type Word,
   type BoxType,
   type BoxState,
   type Lesson,
 } from '@imijun/core';
+import { MOBILE_LESSONS, getNextLessonId, getPreviousLessonId } from '../../data/lessons';
+import { storage } from '../../utils/storage';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
-interface DropZone {
-  id: BoxType;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 // 新しいカラーパレット - より洗練された色合い
 const ENHANCED_COLORS = {
@@ -86,17 +80,28 @@ const ENHANCED_COLORS = {
   },
 };
 
+// Helper function to get all lessons
+const getAllLessons = (): Lesson[] => {
+  return [TUTORIAL_LESSON, ...DEMO_LESSONS, ...MOBILE_LESSONS];
+};
+
+// Helper function to find lesson including mobile lessons
+const findLesson = (id: string): Lesson | undefined => {
+  return getAllLessons().find(lesson => lesson.id === id);
+};
+
 export default function LessonDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [boxStates, setBoxStates] = useState<BoxState[]>([]);
   const [availableWords, setAvailableWords] = useState<Word[]>([]);
-  const [dropZones, setDropZones] = useState<DropZone[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [timeStarted, setTimeStarted] = useState<number>(0);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   // Animated values for feedback and UI
   const feedbackOpacity = useSharedValue(0);
@@ -106,7 +111,7 @@ export default function LessonDetailScreen() {
 
   useEffect(() => {
     if (id) {
-      const foundLesson = getLessonById(id);
+      const foundLesson = findLesson(id);
       if (foundLesson) {
         setLesson(foundLesson);
         setBoxStates(
@@ -117,9 +122,24 @@ export default function LessonDetailScreen() {
           }))
         );
         setAvailableWords([...foundLesson.words]);
+        setTimeStarted(Date.now());
+        
+        // Load previous progress if exists
+        loadLessonProgress(id);
       }
     }
   }, [id]);
+
+  const loadLessonProgress = async (lessonId: string) => {
+    try {
+      const progress = await storage.getLessonProgress(lessonId);
+      if (progress) {
+        setAttempts(progress.attempts || 0);
+      }
+    } catch (error) {
+      console.error('Error loading lesson progress:', error);
+    }
+  };
 
   useEffect(() => {
     // プログレスバーのアニメーション
@@ -132,7 +152,7 @@ export default function LessonDetailScreen() {
     });
   }, [boxStates]);
 
-  const checkAnswer = () => {
+  const checkAnswer = async () => {
     if (!lesson) return;
 
     const placedWords = boxStates
@@ -148,10 +168,20 @@ export default function LessonDetailScreen() {
     if (correct) {
       // スコア計算
       const baseScore = 100;
-      const attemptPenalty = Math.max(0, (attempts - 1) * 10);
+      const attemptPenalty = Math.max(0, (attempts) * 10);
       const earnedScore = Math.max(baseScore - attemptPenalty, 50);
       setScore(prev => prev + earnedScore);
       setStreak(prev => prev + 1);
+      
+      // 時間計算
+      const timeSpent = Math.round((Date.now() - timeStarted) / 1000);
+      
+      // 進捗を保存
+      try {
+        await storage.markLessonCompleted(lesson.id, earnedScore, timeSpent);
+      } catch (error) {
+        console.error('Error saving progress:', error);
+      }
       
       // スコアアニメーション
       scoreScale.value = withSequence(
@@ -166,6 +196,11 @@ export default function LessonDetailScreen() {
         damping: 8,
         stiffness: 100,
       });
+      
+      // 完了モーダルを表示
+      setTimeout(() => {
+        setShowCompletionModal(true);
+      }, 2000);
     } else {
       setStreak(0);
       if (Platform.OS !== 'web') {
@@ -189,34 +224,26 @@ export default function LessonDetailScreen() {
   const handleDrop = (word: Word, boxType: BoxType) => {
     // Check if word type matches box type
     if (word.type === boxType) {
-      // Correct placement
-      setBoxStates(prev =>
-        prev.map(box =>
+      // Remove word from available words
+      setAvailableWords(prev => prev.filter(w => w.id !== word.id));
+      
+      // Add word to box
+      setBoxStates(prev => {
+        const newStates = prev.map(box =>
           box.type === boxType
             ? { ...box, word, isHighlighted: false }
             : box
-        )
-      );
-      
-      setAvailableWords(prev => prev.filter(w => w.id !== word.id));
-      
-      if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-      
-      // Auto-check answer if all boxes are filled
-      const updatedBoxes = boxStates.map(box =>
-        box.type === boxType ? { ...box, word } : box
-      );
-      
-      if (updatedBoxes.every(box => box.word !== null)) {
-        setTimeout(checkAnswer, 500);
-      }
+        );
+        
+        // Auto-check answer if all boxes are filled
+        if (newStates.every(box => box.word !== null)) {
+          setTimeout(checkAnswer, 500);
+        }
+        
+        return newStates;
+      });
     } else {
       // Wrong placement - show error
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      }
       Alert.alert(
         '間違いです',
         `"${word.text}"は「${IMIJUN_LABELS[word.type]}」のボックスに入れてください。`,
@@ -263,6 +290,35 @@ export default function LessonDetailScreen() {
     router.back();
   };
 
+  const goToNextLesson = () => {
+    if (!lesson) return;
+    
+    const nextLessonId = getNextLessonId(lesson.id);
+    if (nextLessonId) {
+      router.replace({
+        pathname: '/lesson/[id]',
+        params: { id: nextLessonId }
+      });
+      setShowCompletionModal(false);
+      resetLesson();
+    } else {
+      // No more lessons, go back to list
+      router.replace('/(tabs)/lessons');
+    }
+  };
+
+  const goToPreviousLesson = () => {
+    if (!lesson) return;
+    
+    const prevLessonId = getPreviousLessonId(lesson.id);
+    if (prevLessonId) {
+      router.replace({
+        pathname: '/lesson/[id]',
+        params: { id: prevLessonId }
+      });
+    }
+  };
+
   const feedbackAnimatedStyle = useAnimatedStyle(() => ({
     opacity: feedbackOpacity.value,
     transform: [{ scale: confettiScale.value * 0.1 + 0.9 }],
@@ -292,15 +348,16 @@ export default function LessonDetailScreen() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <LinearGradient
-        colors={['#f8f9fa', '#e9ecef']}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+      <DraxProvider>
+        <LinearGradient
+          colors={['#f8f9fa', '#e9ecef']}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <SafeAreaView style={styles.safeArea}>
+          <DraxScrollView 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
           {/* Enhanced Header */}
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={goBack}>
@@ -379,19 +436,13 @@ export default function LessonDetailScreen() {
           {/* Enhanced Imijun Boxes */}
           <View style={styles.boxesContainer}>
             {boxStates.map((box, index) => (
-              <ImijunDropBox
+              <DroppableBox
                 key={box.type}
                 boxState={box}
-                index={index}
+                colorScheme={ENHANCED_COLORS[box.type]}
+                onReceiveDrop={(word) => handleDrop(word, box.type)}
                 onRemoveWord={() => removeWordFromBox(box.type)}
-                onLayout={(event) => {
-                  const { x, y, width, height } = event.nativeEvent.layout;
-                  setDropZones(prev => {
-                    const newZones = [...prev];
-                    newZones[index] = { id: box.type, x, y, width, height };
-                    return newZones;
-                  });
-                }}
+                index={index}
               />
             ))}
           </View>
@@ -408,13 +459,11 @@ export default function LessonDetailScreen() {
               単語を上のボックスにドラッグしてください
             </Text>
             <View style={styles.wordsContainer}>
-              {availableWords.map((word, index) => (
-                <DraggableWordChip
+              {availableWords.map((word) => (
+                <DraggableWord
                   key={word.id}
                   word={word}
-                  index={index}
-                  dropZones={dropZones}
-                  onDrop={handleDrop}
+                  colorScheme={ENHANCED_COLORS[word.type]}
                 />
               ))}
             </View>
@@ -435,7 +484,79 @@ export default function LessonDetailScreen() {
               </View>
             </LinearGradient>
           )}
-        </ScrollView>
+          </DraxScrollView>
+
+        {/* Completion Modal */}
+        <Modal
+          visible={showCompletionModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowCompletionModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.completionModal}>
+              <LinearGradient
+                colors={['#dcfce7', '#bbf7d0']}
+                style={styles.completionGradient}
+              >
+                <Text style={styles.completionEmoji}>🎉</Text>
+                <Text style={styles.completionTitle}>レッスン完了！</Text>
+                
+                <View style={styles.completionStats}>
+                  <View style={styles.completionStatCard}>
+                    <Text style={styles.completionStatLabel}>スコア</Text>
+                    <Text style={styles.completionStatValue}>{score}点</Text>
+                  </View>
+                  <View style={styles.completionStatCard}>
+                    <Text style={styles.completionStatLabel}>試行回数</Text>
+                    <Text style={styles.completionStatValue}>{attempts}回</Text>
+                  </View>
+                  <View style={styles.completionStatCard}>
+                    <Text style={styles.completionStatLabel}>連続正解</Text>
+                    <Text style={styles.completionStatValue}>{streak}回</Text>
+                  </View>
+                </View>
+                
+                <Text style={styles.completionMessage}>
+                  {attempts === 1 
+                    ? '素晴らしい！一発で正解しました！' 
+                    : `よく頑張りました！${attempts}回目で正解です！`}
+                </Text>
+                
+                <View style={styles.completionActions}>
+                  <TouchableOpacity 
+                    style={styles.nextLessonButton}
+                    onPress={goToNextLesson}
+                  >
+                    <LinearGradient
+                      colors={['#60a5fa', '#3b82f6']}
+                      style={styles.buttonGradient}
+                    >
+                      <Text style={styles.buttonText}>次のレッスンへ</Text>
+                      <Svg width="20" height="20" viewBox="0 0 24 24">
+                        <Path
+                          d="M9 18l6-6-6-6"
+                          stroke="#ffffff"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </Svg>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.backToListButton}
+                    onPress={() => router.replace('/(tabs)/lessons')}
+                  >
+                    <Text style={styles.backToListText}>レッスン一覧へ</Text>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
+            </View>
+          </View>
+        </Modal>
 
         {/* Enhanced Feedback Modal */}
         {showFeedback && (
@@ -516,267 +637,11 @@ export default function LessonDetailScreen() {
             </LinearGradient>
           </Animated.View>
         )}
-      </SafeAreaView>
+        </SafeAreaView>
+      </DraxProvider>
     </GestureHandlerRootView>
   );
 }
-
-// Enhanced Draggable Word Chip Component
-const DraggableWordChip: React.FC<{
-  word: Word;
-  index: number;
-  dropZones: DropZone[];
-  onDrop: (word: Word, boxType: BoxType) => void;
-}> = ({ word, index, dropZones, onDrop }) => {
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(1);
-  const rotation = useSharedValue(0);
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
-
-  // 初期アニメーション
-  useEffect(() => {
-    scale.value = withDelay(
-      index * 50,
-      withSpring(1, {
-        damping: 10,
-        stiffness: 100,
-      })
-    );
-  }, []);
-
-  const pan = Gesture.Pan()
-    .onStart((event) => {
-      'worklet';
-      startX.value = event.absoluteX - event.translationX;
-      startY.value = event.absoluteY - event.translationY;
-      scale.value = withSpring(1.2, {
-        damping: 10,
-        stiffness: 200,
-      });
-      rotation.value = withSpring(5);
-      opacity.value = withTiming(0.95);
-      if (Platform.OS !== 'web') {
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-      }
-    })
-    .onUpdate((event) => {
-      'worklet';
-      translateX.value = event.translationX;
-      translateY.value = event.translationY;
-      // 軽い傾き効果
-      rotation.value = interpolate(
-        event.velocityX,
-        [-500, 0, 500],
-        [-10, 0, 10]
-      );
-    })
-    .onEnd((event) => {
-      'worklet';
-      const dropX = startX.value + event.translationX;
-      const dropY = startY.value + event.translationY;
-      
-      const dropZone = dropZones.find((zone) => {
-        return (
-          dropX >= zone.x &&
-          dropX <= zone.x + zone.width &&
-          dropY >= zone.y &&
-          dropY <= zone.y + zone.height
-        );
-      });
-
-      if (dropZone) {
-        runOnJS(onDrop)(word, dropZone.id);
-      }
-
-      // スムーズなリセットアニメーション
-      translateX.value = withSpring(0, {
-        damping: 15,
-        stiffness: 150,
-      });
-      translateY.value = withSpring(0, {
-        damping: 15,
-        stiffness: 150,
-      });
-      scale.value = withSpring(1, {
-        damping: 10,
-        stiffness: 100,
-      });
-      rotation.value = withSpring(0);
-      opacity.value = withTiming(1);
-    });
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-      { rotate: `${rotation.value}deg` },
-    ],
-    opacity: opacity.value,
-    zIndex: translateX.value !== 0 || translateY.value !== 0 ? 1000 : 1,
-  }));
-
-  const colorScheme = ENHANCED_COLORS[word.type];
-
-  return (
-    <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.wordChipWrapper, animatedStyle]}>
-        <LinearGradient
-          colors={colorScheme.gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.wordChip}
-        >
-          <Text style={styles.wordText}>{word.text}</Text>
-          <View style={styles.wordTypeIndicator}>
-            <Text style={styles.wordTypeText}>
-              {IMIJUN_LABELS[word.type][0]}
-            </Text>
-          </View>
-        </LinearGradient>
-      </Animated.View>
-    </GestureDetector>
-  );
-};
-
-// Enhanced Drop Box Component
-const ImijunDropBox: React.FC<{
-  boxState: BoxState;
-  index: number;
-  onRemoveWord: () => void;
-  onLayout: (event: any) => void;
-}> = ({ boxState, index, onRemoveWord, onLayout }) => {
-  const colorScheme = ENHANCED_COLORS[boxState.type];
-  const japaneseLabel = IMIJUN_LABELS[boxState.type];
-  const englishLabel = ENGLISH_LABELS[boxState.type];
-  
-  const scale = useSharedValue(1);
-  const borderWidth = useSharedValue(2);
-  const glowOpacity = useSharedValue(0);
-
-  // 初期アニメーション
-  useEffect(() => {
-    scale.value = withDelay(
-      index * 100,
-      withSpring(1, {
-        damping: 12,
-        stiffness: 100,
-      })
-    );
-  }, []);
-
-  // 単語が配置された時のアニメーション
-  useEffect(() => {
-    if (boxState.word) {
-      scale.value = withSequence(
-        withSpring(1.1, { damping: 5 }),
-        withSpring(1, { damping: 10 })
-      );
-      glowOpacity.value = withSequence(
-        withTiming(1, { duration: 200 }),
-        withTiming(0.3, { duration: 300 })
-      );
-    }
-  }, [boxState.word]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-  }));
-
-  return (
-    <Animated.View style={[styles.dropBoxWrapper, animatedStyle]} onLayout={onLayout}>
-      {/* グロー効果 */}
-      <Animated.View style={[styles.dropBoxGlow, glowStyle]}>
-        <LinearGradient
-          colors={[colorScheme.light + '40', colorScheme.main + '20']}
-          style={StyleSheet.absoluteFillObject}
-        />
-      </Animated.View>
-      
-      {/* メインボックス */}
-      <LinearGradient
-        colors={boxState.word 
-          ? [colorScheme.light + '30', colorScheme.main + '20']
-          : ['#ffffff', '#f9fafb']
-        }
-        style={styles.dropBox}
-      >
-        {/* ボーダー */}
-        <View style={[
-          styles.dropBoxBorder,
-          {
-            borderColor: colorScheme.main,
-            borderStyle: boxState.isHighlighted ? 'dashed' : 'solid',
-            borderWidth: boxState.word ? 2.5 : 2,
-          }
-        ]} />
-        
-        {/* ラベル */}
-        <View style={styles.labelContainer}>
-          <LinearGradient
-            colors={colorScheme.gradient}
-            style={styles.labelBadge}
-          >
-            <Text style={styles.japaneseLabel}>{japaneseLabel}</Text>
-            <Text style={styles.englishLabel}>{englishLabel}</Text>
-          </LinearGradient>
-        </View>
-        
-        {/* 配置された単語またはプレースホルダー */}
-        <TouchableOpacity
-          style={styles.wordContainer}
-          onPress={boxState.word ? onRemoveWord : undefined}
-          disabled={!boxState.word}
-          activeOpacity={0.7}
-        >
-          {boxState.word ? (
-            <View style={styles.placedWordContainer}>
-              <Text style={[styles.placedWordText, { color: colorScheme.dark }]}>
-                {boxState.word.text}
-              </Text>
-              <View style={styles.removeIcon}>
-                <Svg width="16" height="16" viewBox="0 0 24 24">
-                  <Path
-                    d="M6 18L18 6M6 6l12 12"
-                    stroke={colorScheme.main}
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </Svg>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.placeholderContainer}>
-              <Svg width="24" height="24" viewBox="0 0 24 24" opacity={0.3}>
-                <Path
-                  d="M12 5v14m-7-7h14"
-                  stroke={colorScheme.main}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              </Svg>
-              <Text style={[styles.placeholderText, { color: colorScheme.main + '80' }]}>
-                ドロップ
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </LinearGradient>
-    </Animated.View>
-  );
-};
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -941,7 +806,8 @@ const styles = StyleSheet.create({
   
   // Drop Box Styles
   dropBoxWrapper: {
-    width: screenWidth * 0.28,
+    width: '30%',
+    minWidth: 100,
     height: 110,
     margin: 8,
   },
@@ -1197,6 +1063,14 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+    marginRight: 8,
+  },
+  buttonGradient: {
+    flexDirection: 'row',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   retryButton: {
     backgroundColor: '#ffffff',
@@ -1223,5 +1097,86 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#ef4444',
     marginBottom: 20,
+  },
+  
+  // Completion Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  completionModal: {
+    width: '90%',
+    maxWidth: 400,
+    borderRadius: 24,
+    overflow: 'hidden',
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  completionGradient: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  completionEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  completionTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#16a34a',
+    marginBottom: 24,
+  },
+  completionStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginBottom: 24,
+  },
+  completionStatCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    minWidth: 80,
+  },
+  completionStatLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  completionStatValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  completionMessage: {
+    fontSize: 16,
+    color: '#374151',
+    textAlign: 'center',
+    marginBottom: 32,
+    paddingHorizontal: 20,
+    lineHeight: 24,
+  },
+  completionActions: {
+    width: '100%',
+  },
+  nextLessonButton: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  backToListButton: {
+    paddingVertical: 12,
+  },
+  backToListText: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
   },
 });

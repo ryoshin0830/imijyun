@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -7,55 +7,71 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Dimensions,
-  Animated,
+  RefreshControl,
   Platform,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  interpolate,
+  useAnimatedScrollHandler,
+  runOnJS,
+} from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { IMIJUN_COLORS } from '@imijun/core';
+import { useTheme } from '../../contexts/ThemeContext';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { Skeleton } from '../../components/ui/Loading';
+import { Typography, Spacing, BorderRadius, Shadows, Animation } from '../../theme';
 
 const { width: screenWidth } = Dimensions.get('window');
+const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
-// アニメーション用のカスタムコンポーネント
-const AnimatedCard = ({ children, delay = 0, style }: any) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+// 改善されたアニメーションカードコンポーネント
+const AnimatedCard: React.FC<{ 
+  children: React.ReactNode; 
+  delay?: number; 
+  style?: any;
+  index?: number;
+}> = ({ children, delay = 0, style, index = 0 }) => {
+  const translateY = useSharedValue(30);
+  const opacity = useSharedValue(0);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        delay,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    translateY.value = withSpring(0, {
+      damping: 15,
+      stiffness: 150,
+      mass: 1,
+      delay: delay + (index * 100),
+    });
+    opacity.value = withTiming(1, {
+      duration: Animation.duration.normal,
+      delay: delay + (index * 100),
+    });
   }, []);
 
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
   return (
-    <Animated.View
-      style={[
-        style,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-        },
-      ]}
-    >
+    <Animated.View style={[style, animatedStyle]}>
       {children}
     </Animated.View>
   );
 };
 
 export default function HomeScreen() {
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const { colors, actualColorScheme } = useTheme();
+  const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollY = useSharedValue(0);
 
   const startTutorial = () => {
     router.push({
@@ -68,25 +84,45 @@ export default function HomeScreen() {
     router.push('/(tabs)/lessons');
   };
 
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [1, 0.8],
-    extrapolate: 'clamp',
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    // データの再読み込み処理
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 2000);
+  }, []);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
   });
 
+  const headerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 100], [1, 0.8]),
+    transform: [
+      { scale: interpolate(scrollY.value, [0, 100], [1, 0.95]) },
+    ],
+  }));
+
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.ScrollView 
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <AnimatedScrollView 
         style={styles.scrollView}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* ヘッダーグラデーション */}
-        <Animated.View style={[styles.headerWrapper, { opacity: headerOpacity }]}>
+        <Animated.View style={[styles.headerWrapper, headerStyle]}>
           <LinearGradient
             colors={[IMIJUN_COLORS.subject, IMIJUN_COLORS.verb]}
             start={{ x: 0, y: 0 }}
@@ -113,10 +149,11 @@ export default function HomeScreen() {
           <AnimatedCard delay={100} style={styles.section}>
             <Text style={styles.sectionTitle}>クイックスタート</Text>
             <View style={styles.quickStartGrid}>
-              <TouchableOpacity 
-                style={[styles.quickCard, styles.tutorialCard]} 
+              <Card
                 onPress={startTutorial}
-                activeOpacity={0.8}
+                variant="elevated"
+                padding="none"
+                style={[styles.quickCard, styles.tutorialCard]}
               >
                 <LinearGradient
                   colors={[IMIJUN_COLORS.subject, '#5B8DEF']}
@@ -128,12 +165,13 @@ export default function HomeScreen() {
                   <Text style={styles.quickCardTitle}>チュートリアル</Text>
                   <Text style={styles.quickCardSubtitle}>基本を学ぶ</Text>
                 </LinearGradient>
-              </TouchableOpacity>
+              </Card>
 
-              <TouchableOpacity 
-                style={[styles.quickCard, styles.todayCard]} 
+              <Card
                 onPress={goToLessons}
-                activeOpacity={0.8}
+                variant="elevated"
+                padding="none"
+                style={[styles.quickCard, styles.todayCard]}
               >
                 <LinearGradient
                   colors={[IMIJUN_COLORS.verb, '#E560AA']}
@@ -145,44 +183,44 @@ export default function HomeScreen() {
                   <Text style={styles.quickCardTitle}>今日のレッスン</Text>
                   <Text style={styles.quickCardSubtitle}>挑戦しよう</Text>
                 </LinearGradient>
-              </TouchableOpacity>
+              </Card>
             </View>
           </AnimatedCard>
 
           {/* 学習進捗サマリー */}
           <AnimatedCard delay={200} style={styles.section}>
-            <Text style={styles.sectionTitle}>学習進捗</Text>
-            <View style={styles.statsCard}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>学習進捗</Text>
+            <Card variant="elevated" padding="large">
               <View style={styles.statsGrid}>
                 <View style={styles.statItem}>
                   <View style={[styles.statIcon, { backgroundColor: IMIJUN_COLORS.subject + '20' }]}>
                     <Ionicons name="checkmark-circle" size={24} color={IMIJUN_COLORS.subject} />
                   </View>
-                  <Text style={styles.statNumber}>0</Text>
-                  <Text style={styles.statLabel}>完了レッスン</Text>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>0</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>完了レッスン</Text>
                 </View>
                 
                 <View style={styles.statItem}>
                   <View style={[styles.statIcon, { backgroundColor: IMIJUN_COLORS.object + '20' }]}>
                     <Ionicons name="trophy" size={24} color={IMIJUN_COLORS.object} />
                   </View>
-                  <Text style={styles.statNumber}>0</Text>
-                  <Text style={styles.statLabel}>総得点</Text>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>0</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>総得点</Text>
                 </View>
                 
                 <View style={styles.statItem}>
                   <View style={[styles.statIcon, { backgroundColor: IMIJUN_COLORS.place + '20' }]}>
                     <Ionicons name="time" size={24} color={IMIJUN_COLORS.place} />
                   </View>
-                  <Text style={styles.statNumber}>0</Text>
-                  <Text style={styles.statLabel}>学習時間(分)</Text>
+                  <Text style={[styles.statNumber, { color: colors.text }]}>0</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>学習時間(分)</Text>
                 </View>
               </View>
 
               {/* プログレスバー */}
               <View style={styles.progressSection}>
-                <Text style={styles.progressTitle}>今週の目標達成率</Text>
-                <View style={styles.progressBar}>
+                <Text style={[styles.progressTitle, { color: colors.textSecondary }]}>今週の目標達成率</Text>
+                <View style={[styles.progressBar, { backgroundColor: colors.divider }]}>
                   <Animated.View 
                     style={[
                       styles.progressFill,
@@ -190,14 +228,14 @@ export default function HomeScreen() {
                     ]} 
                   />
                 </View>
-                <Text style={styles.progressText}>0 / 7 レッスン</Text>
+                <Text style={[styles.progressText, { color: colors.textTertiary }]}>0 / 7 レッスン</Text>
               </View>
-            </View>
+            </Card>
           </AnimatedCard>
 
           {/* 意味順ボックスの説明 */}
           <AnimatedCard delay={300} style={styles.section}>
-            <Text style={styles.sectionTitle}>意味順5つのボックス</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>意味順5つのボックス</Text>
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
@@ -223,25 +261,26 @@ export default function HomeScreen() {
 
           {/* 最近のレッスン履歴 */}
           <AnimatedCard delay={400} style={styles.section}>
-            <Text style={styles.sectionTitle}>最近の学習</Text>
-            <View style={styles.recentCard}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>最近の学習</Text>
+            <Card variant="elevated" padding="large">
               <View style={styles.emptyState}>
-                <Ionicons name="book-outline" size={48} color="#d1d5db" />
-                <Text style={styles.emptyStateText}>
+                <Ionicons name="book-outline" size={48} color={colors.textTertiary} />
+                <Text style={[styles.emptyStateText, { color: colors.textTertiary }]}>
                   まだ学習履歴がありません
                 </Text>
-                <TouchableOpacity 
-                  style={styles.startButton}
+                <Button
                   onPress={startTutorial}
-                  activeOpacity={0.8}
+                  variant="primary"
+                  size="medium"
+                  icon="play"
                 >
-                  <Text style={styles.startButtonText}>学習を始める</Text>
-                </TouchableOpacity>
+                  学習を始める
+                </Button>
               </View>
-            </View>
+            </Card>
           </AnimatedCard>
         </View>
-      </Animated.ScrollView>
+      </AnimatedScrollView>
     </SafeAreaView>
   );
 }

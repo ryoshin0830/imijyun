@@ -2,12 +2,28 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { IMIJUN_COLORS } from '@imijun/core';
+import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 
-export default function RootLayout() {
+function RootLayoutContent() {
+  const { actualColorScheme, colors } = useTheme();
+  
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="light" backgroundColor={IMIJUN_COLORS.subject} />
-      <Stack>
+    <>
+      <StatusBar 
+        style={actualColorScheme === 'dark' ? 'light' : 'dark'} 
+        backgroundColor={colors.primary} 
+      />
+      <Stack
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: colors.primary,
+          },
+          headerTintColor: colors.textInverse,
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      >
         <Stack.Screen
           name="(tabs)"
           options={{
@@ -36,6 +52,16 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <RootLayoutContent />
+      </ThemeProvider>
     </GestureHandlerRootView>
   );
 }

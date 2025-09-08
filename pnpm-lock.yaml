@@ -35,6 +35,9 @@ importers:
       '@imijun/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@react-native-async-storage/async-storage':
+        specifier: ^2.2.0
+        version: 2.2.0(react-native@0.79.5)
       '@react-native-community/netinfo':
         specifier: ^11.4.1
         version: 11.4.1(react-native@0.79.5)
@@ -74,6 +77,9 @@ importers:
       react-native-draggable-flatlist:
         specifier: ^4.0.3
         version: 4.0.3(@babel/core@7.28.4)(react-native-gesture-handler@2.24.0)(react-native-reanimated@3.17.5)(react-native@0.79.5)
+      react-native-drax:
+        specifier: ^0.10.3
+        version: 0.10.3(react-native-gesture-handler@2.24.0)(react-native@0.79.5)(react@19.0.0)
       react-native-gesture-handler:
         specifier: ^2.24.0
         version: 2.24.0(react-native@0.79.5)(react@19.0.0)
@@ -1986,6 +1992,15 @@ packages:
       '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.0.14)(react@19.0.0)
       '@types/react': 19.0.14
       react: 19.0.0
+    dev: false
+
+  /@react-native-async-storage/async-storage@2.2.0(react-native@0.79.5):
+    resolution: {integrity: sha512-gvRvjR5JAaUZF8tv2Kcq/Gbt3JHwbKFYfmb445rhOj6NUMx3qPLixmDx5pZAyb9at1bYvJ4/eTUipU5aki45xw==}
+    peerDependencies:
+      react-native: ^0.0.0-0 || >=0.65 <1.0
+    dependencies:
+      merge-options: 3.0.4
+      react-native: 0.79.5(@babel/core@7.28.4)(@types/react@19.0.14)(react@19.0.0)
     dev: false
 
   /@react-native-community/netinfo@11.4.1(react-native@0.79.5):
@@ -5223,6 +5238,11 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
+  /is-plain-obj@2.1.0:
+    resolution: {integrity: sha512-YWnfyRwxL/+SsrWYfOpUtz5b3YD+nyfkHvjbcanzk8zgyO4ASD67uVMRt8k5bM4lLMDnXfriRhOpemw+NfT1eA==}
+    engines: {node: '>=8'}
+    dev: false
+
   /is-regex@1.2.1:
     resolution: {integrity: sha512-MjYsKHO5O7mCsmRGxWcLWheFqN9DJ/2TmngvjKXihe6efViPqc274+Fx/4fYj/r03+ESvBdTXK0V6tA3rgez1g==}
     engines: {node: '>= 0.4'}
@@ -5713,6 +5733,11 @@ packages:
     resolution: {integrity: sha512-FT1yDzDYEoYWhnSGnpE/4Kj1fLZkDFyqRb7fNt6FdYOSxlUWAtp42Eh6Wb0rGIv/m9Bgo7x4GhQbm5Ys4SG5ow==}
     dev: false
 
+  /lodash.isequal@4.5.0:
+    resolution: {integrity: sha512-pDo3lu8Jhfjqls6GkMgpahsF9kCyayhgykjyLMNFTKWrpVdAQtYyB4muAMWozBB4ig/dtWAmsMxLEI8wuz+DYQ==}
+    deprecated: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+    dev: false
+
   /lodash.merge@4.6.2:
     resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
     dev: true
@@ -5780,6 +5805,13 @@ packages:
 
   /memoize-one@5.2.1:
     resolution: {integrity: sha512-zYiwtZUcYyXKo/np96AGZAckk+FWWsUdJ3cHGGmld7+AhvcWmQyGCYUh1hc4Q/pkOhb65dQR/pqCyK0cOaHz4Q==}
+    dev: false
+
+  /merge-options@3.0.4:
+    resolution: {integrity: sha512-2Sug1+knBjkaMsMgf1ctR1Ujx+Ayku4EdJN4Z+C2+JzoeF7A3OZ9KM2GY0CpQS51NR61LTurMJrRKPhSs3ZRTQ==}
+    engines: {node: '>=10'}
+    dependencies:
+      is-plain-obj: 2.1.0
     dev: false
 
   /merge-stream@2.0.0:
@@ -6773,6 +6805,21 @@ packages:
     transitivePeerDependencies:
       - '@babel/core'
       - supports-color
+    dev: false
+
+  /react-native-drax@0.10.3(react-native-gesture-handler@2.24.0)(react-native@0.79.5)(react@19.0.0):
+    resolution: {integrity: sha512-44hoX5etOm3R4MK6YK5/w+lFFchQnPm/mt7FS20lnLqZtS5tfK+IEWRvk7dwUfEeOGEkHgFRFdbHiQKV98XQTQ==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.65.0'
+      react-native-gesture-handler: '>=1.8.0'
+    dependencies:
+      lodash.isequal: 4.5.0
+      lodash.throttle: 4.1.1
+      react: 19.0.0
+      react-native: 0.79.5(@babel/core@7.28.4)(@types/react@19.0.14)(react@19.0.0)
+      react-native-gesture-handler: 2.24.0(react-native@0.79.5)(react@19.0.0)
+      typesafe-actions: 5.1.0
     dev: false
 
   /react-native-edge-to-edge@1.6.0(react-native@0.79.5)(react@19.0.0):
@@ -7948,6 +7995,11 @@ packages:
       possible-typed-array-names: 1.1.0
       reflect.getprototypeof: 1.0.10
     dev: true
+
+  /typesafe-actions@5.1.0:
+    resolution: {integrity: sha512-bna6Yi1pRznoo6Bz1cE6btB/Yy8Xywytyfrzu/wc+NFW3ZF0I+2iCGImhBsoYYCOWuICtRO4yHcnDlzgo1AdNg==}
+    engines: {node: '>= 4'}
+    dev: false
 
   /typescript@5.8.3:
     resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
