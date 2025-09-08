@@ -29,14 +29,7 @@ config.resolver.alias = {
   '@imijun/lib': path.resolve(monorepoRoot, 'packages/lib'),
 };
 
-// Metro transformerの設定
-config.transformer = {
-  ...config.transformer,
-  // React Nativeのため、getTransforms関数を設定
-  getTransforms: () => ({
-    ...config.transformer.getTransforms(),
-    // 必要に応じて追加のtransformを設定
-  }),
-};
+// Metro transformerの設定は既存の設定をそのまま使用
+// config.transformerの追加設定が必要な場合はここに追加
 
 module.exports = config;
