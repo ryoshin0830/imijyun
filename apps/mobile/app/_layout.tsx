@@ -9,30 +9,15 @@ export default function RootLayout() {
       <StatusBar style="light" backgroundColor={IMIJUN_COLORS.subject} />
       <Stack>
         <Stack.Screen
-          name="index"
+          name="(tabs)"
           options={{
-            title: "意味順英語学習",
-            headerStyle: {
-              backgroundColor: IMIJUN_COLORS.subject,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
+            headerShown: false,
           }}
         />
         <Stack.Screen
-          name="lessons"
+          name="index"
           options={{
-            title: "レッスン選択",
-            headerStyle: {
-              backgroundColor: IMIJUN_COLORS.verb,
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            headerBackTitle: "戻る",
+            headerShown: false,
           }}
         />
         <Stack.Screen
@@ -47,6 +32,7 @@ export default function RootLayout() {
               fontWeight: 'bold',
             },
             headerBackTitle: "戻る",
+            presentation: 'modal',
           }}
         />
       </Stack>
