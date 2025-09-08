@@ -4,11 +4,14 @@
   "private": true,
   "description": "意味順英語教育アプリケーション - Monorepo Root",
   "scripts": {
+    "preinstall": "npx only-allow pnpm",
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "build:packages": "turbo run build --filter='./packages/*'",
     "start": "turbo run start",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "type-check": "turbo run type-check",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {

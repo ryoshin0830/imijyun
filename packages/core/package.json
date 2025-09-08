@@ -1,7 +1,7 @@
 {
-  "name": "@imijun/lib",
+  "name": "@imijun/core",
   "version": "1.0.0",
-  "description": "Shared utility functions and helpers for Imijun monorepo",
+  "description": "Core business logic and types for Imijun English learning app",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -9,13 +9,21 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./utils": {
-      "types": "./dist/utils/index.d.ts",
-      "default": "./dist/utils/index.js"
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/types/index.js"
     },
     "./constants": {
       "types": "./dist/constants/index.d.ts",
       "default": "./dist/constants/index.js"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "default": "./dist/stores/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "default": "./dist/utils/index.js"
     }
   },
   "files": [
@@ -26,12 +34,13 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
-    "lint": "eslint src --ext .ts,.tsx",
-    "type-check": "tsc --noEmit"
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "eslint": "^8.56.0",
     "typescript": "^5.3.3"
   },
   "publishConfig": {

@@ -4,18 +4,57 @@
   "pipeline": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"],
       "env": [
         "NODE_ENV",
-        "NEXT_PUBLIC_*"
+        "NEXT_PUBLIC_*",
+        "EXPO_PUBLIC_*"
+      ]
+    },
+    "build:mobile": {
+      "dependsOn": ["^build"],
+      "outputs": ["build/**", "dist/**"],
+      "env": [
+        "NODE_ENV",
+        "EXPO_PUBLIC_*",
+        "EAS_*"
+      ]
+    },
+    "prebuild": {
+      "dependsOn": ["^build"],
+      "outputs": ["android/**", "ios/**"],
+      "env": [
+        "EXPO_PUBLIC_*",
+        "EAS_*"
       ]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
+    "dev:mobile": {
+      "cache": false,
+      "persistent": true,
+      "env": [
+        "EXPO_PUBLIC_*",
+        "EXPO_DEVTOOLS_LISTEN_ADDRESS"
+      ]
+    },
     "start": {
       "dependsOn": ["build"]
+    },
+    "start:mobile": {
+      "dependsOn": ["build:mobile"],
+      "env": [
+        "EXPO_PUBLIC_*"
+      ]
+    },
+    "export": {
+      "dependsOn": ["build:mobile"],
+      "outputs": ["dist/**"],
+      "env": [
+        "EXPO_PUBLIC_*"
+      ]
     },
     "lint": {
       "outputs": []

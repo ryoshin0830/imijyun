@@ -1,9 +1,16 @@
 {
   "name": "@imijun/config",
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "description": "Shared configuration for Imijun monorepo (ESLint, etc.)",
   "private": true,
+  "main": "index.js",
+  "exports": {
+    "./eslint": "./eslint-preset.js"
+  },
   "files": [
-    "eslint-preset.js",
-    "tsconfig.base.json"
-  ]
+    "eslint-preset.js"
+  ],
+  "publishConfig": {
+    "access": "restricted"
+  }
 }

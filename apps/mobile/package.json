@@ -1,0 +1,39 @@
+{
+  "name": "@imijun/mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "dev": "expo start --dev-client",
+    "dev:android": "expo start --dev-client --android",
+    "dev:ios": "expo start --dev-client --ios",
+    "dev:web": "expo start --dev-client --web",
+    "build": "expo build",
+    "build:android": "expo build:android",
+    "build:ios": "expo build:ios",
+    "clear-cache": "expo start --clear",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@imijun/core": "workspace:*",
+    "@imijun/ui": "workspace:*",
+    "@imijun/lib": "workspace:*",
+    "expo": "~53.0.22",
+    "expo-constants": "^17.1.7",
+    "expo-linking": "^7.1.7",
+    "expo-router": "^5.1.4",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.6",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  },
+  "private": true
+}

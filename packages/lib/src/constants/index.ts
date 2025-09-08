@@ -1,0 +1,1 @@
+// General constants shared across platforms
