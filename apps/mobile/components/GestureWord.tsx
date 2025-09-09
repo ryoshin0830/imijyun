@@ -48,11 +48,25 @@ const GestureWord: React.FC<GestureWordProps> = ({
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const zIndex = useSharedValue(0);
+  
+  // 初期位置を記録するためのref
+  const initialPosition = React.useRef<{ x: number; y: number } | null>(null);
+  const viewRef = React.useRef<any>(null);
 
   // 触覚フィードバック関数
   const triggerHaptic = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
+
+  // 初期位置を測定
+  const measureInitialPosition = React.useCallback(() => {
+    if (viewRef.current) {
+      viewRef.current.measureInWindow((x, y, width, height) => {
+        initialPosition.current = { x, y };
+        console.log(`[GestureWord] Initial position for "${word.text}":`, { x, y, width, height });
+      });
+    }
+  }, [word.text]);
 
   // ドラッグ開始時のハンドラー
   const handleDragStart = useCallback(() => {
@@ -60,14 +74,19 @@ const GestureWord: React.FC<GestureWordProps> = ({
     scale.value = withSpring(1.1, { damping: 10 });
     opacity.value = withSpring(0.9);
     zIndex.value = 1000;
+    
+    // 初期位置を測定
+    runOnJS(measureInitialPosition)();
+    
     if (onDragStart) {
       runOnJS(onDragStart)();
     }
     runOnJS(triggerHaptic)();
-  }, [onDragStart, triggerHaptic, scale, opacity, zIndex]);
+  }, [onDragStart, triggerHaptic, scale, opacity, zIndex, measureInitialPosition]);
 
   // ドラッグ終了時のハンドラー
   const handleDragEndJS = useCallback((x: number, y: number) => {
+    console.log(`[GestureWord] Drag end for "${word.text}":`, { x, y });
     if (onDragEnd) {
       onDragEnd(word, x, y);
     }
@@ -79,6 +98,8 @@ const GestureWord: React.FC<GestureWordProps> = ({
   // Pan Gestureの設定
   const panGesture = Gesture.Pan()
     .onStart(() => {
+      // ドラッグ開始時に必ず位置を測定
+      measureInitialPosition();
       handleDragStart();
     })
     .onUpdate((event) => {
@@ -86,11 +107,57 @@ const GestureWord: React.FC<GestureWordProps> = ({
       translateY.value = event.translationY;
     })
     .onEnd((event) => {
-      // 絶対座標を計算
-      const absoluteX = event.absoluteX;
-      const absoluteY = event.absoluteY;
+      // 複数の座標取得方法を試す
+      const absoluteX = event.absoluteX || 0;
+      const absoluteY = event.absoluteY || 0;
+      const x = event.x || 0;
+      const y = event.y || 0;
       
-      runOnJS(handleDragEndJS)(absoluteX, absoluteY);
+      console.log(`[GestureWord] onEnd event for "${word.text}":`, {
+        absoluteX,
+        absoluteY,
+        x,
+        y,
+        translationX: event.translationX,
+        translationY: event.translationY,
+        velocity: { x: event.velocityX, y: event.velocityY }
+      });
+      
+      // iOS シミュレーターでは absoluteY が正しく取得できない場合がある
+      // 初期位置 + 移動量で計算する方法を優先
+      let finalX = 0;
+      let finalY = 0;
+      
+      if (initialPosition.current && initialPosition.current.x > 0 && initialPosition.current.y > 0) {
+        // 初期位置が取得できている場合は、それを基準に計算
+        finalX = initialPosition.current.x + event.translationX;
+        finalY = initialPosition.current.y + event.translationY;
+        console.log(`[GestureWord] Using initial position + translation:`, { 
+          finalX, 
+          finalY, 
+          initial: initialPosition.current, 
+          translation: { x: event.translationX, y: event.translationY }
+        });
+      } else if (absoluteX > 0 && absoluteY > 0) {
+        // absoluteX/Y が利用可能な場合
+        finalX = absoluteX;
+        finalY = absoluteY;
+        console.log(`[GestureWord] Using absolute coordinates:`, { finalX, finalY });
+      } else if (x > 0 && y > 0) {
+        // x/y が利用可能な場合
+        finalX = x;
+        finalY = y;
+        console.log(`[GestureWord] Using x/y coordinates:`, { finalX, finalY });
+      }
+      
+      console.log(`[GestureWord] Final coordinates:`, { finalX, finalY });
+      
+      // 座標が有効な場合のみハンドラーを呼び出す
+      if (finalX > 0 && finalY > 0) {
+        runOnJS(handleDragEndJS)(finalX, finalY);
+      } else {
+        console.log(`[GestureWord] Invalid coordinates, skipping drop detection`);
+      }
       
       // アニメーションで元の位置に戻す
       translateX.value = withSpring(0, { damping: 10 });
@@ -98,6 +165,14 @@ const GestureWord: React.FC<GestureWordProps> = ({
       scale.value = withSpring(1, { damping: 10 });
       opacity.value = withSpring(1);
       zIndex.value = withSpring(0);
+    })
+    .onFinalize(() => {
+      // ジェスチャーがキャンセルされた場合も元に戻す
+      translateX.value = withSpring(0, { damping: 10 });
+      translateY.value = withSpring(0, { damping: 10 });
+      scale.value = withSpring(1, { damping: 10 });
+      opacity.value = withSpring(1);
+      zIndex.value = 0;
     });
 
   // アニメーションスタイル
@@ -113,7 +188,11 @@ const GestureWord: React.FC<GestureWordProps> = ({
 
   return (
     <GestureDetector gesture={panGesture}>
-      <Animated.View style={[styles.wordWrapper, animatedStyle]}>
+      <Animated.View 
+        ref={viewRef}
+        style={[styles.wordWrapper, animatedStyle]}
+        onLayout={measureInitialPosition}
+      >
         <LinearGradient
           colors={colorScheme.gradient as any}
           start={{ x: 0, y: 0 }}

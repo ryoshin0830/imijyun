@@ -88,12 +88,33 @@ const GestureDropBox: React.FC<GestureDropBoxProps> = ({
     }
   }, [isHighlighted, borderWidth, scale]);
 
-  // レイアウト測定
-  const handleLayout = () => {
-    if (viewRef.current && onLayoutMeasure) {
-      viewRef.current.measureInWindow((x, y, width, height) => {
-        onLayoutMeasure(boxState.type, x, y, width, height);
-      });
+  // レイアウト測定（より安全な方法）
+  const handleLayout = (event: any) => {
+    if (onLayoutMeasure) {
+      // onLayoutイベントから直接座標を取得
+      const { layout } = event.nativeEvent;
+      if (layout) {
+        const { x, y, width, height } = layout;
+        console.log(`[GestureDropBox] Layout for ${boxState.type}:`, { x, y, width, height });
+        
+        // ページ座標を取得するためにmeasureを使用
+        requestAnimationFrame(() => {
+          if (viewRef.current) {
+            try {
+              viewRef.current.measure((fx, fy, w, h, px, py) => {
+                console.log(`[GestureDropBox] Page coordinates for ${boxState.type}:`, { px, py, w, h });
+                if (px !== undefined && py !== undefined && w > 0 && h > 0) {
+                  onLayoutMeasure(boxState.type, px, py, w, h);
+                }
+              });
+            } catch (error) {
+              console.warn(`[GestureDropBox] Measure failed for ${boxState.type}:`, error);
+              // フォールバック: レイアウト座標を使用
+              onLayoutMeasure(boxState.type, x, y, width, height);
+            }
+          }
+        });
+      }
     }
   };
 
@@ -209,16 +230,32 @@ export const checkDropZone = (
   y: number,
   zones: { [key: string]: { x: number; y: number; width: number; height: number } }
 ): string | null => {
+  console.log(`[checkDropZone] Checking drop at (${x}, ${y}) against zones:`, zones);
+  
   for (const [zoneId, zone] of Object.entries(zones)) {
-    if (
+    const isInZone = (
       x >= zone.x &&
       x <= zone.x + zone.width &&
       y >= zone.y &&
       y <= zone.y + zone.height
-    ) {
+    );
+    
+    console.log(`[checkDropZone] Zone ${zoneId}:`, {
+      zone,
+      isInZone,
+      calculations: {
+        xInRange: `${x} >= ${zone.x} && ${x} <= ${zone.x + zone.width}`,
+        yInRange: `${y} >= ${zone.y} && ${y} <= ${zone.y + zone.height}`
+      }
+    });
+    
+    if (isInZone) {
+      console.log(`[checkDropZone] Match found: ${zoneId}`);
       return zoneId;
     }
   }
+  
+  console.log(`[checkDropZone] No zone match found`);
   return null;
 };
 

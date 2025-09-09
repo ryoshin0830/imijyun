@@ -39,7 +39,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 
 // カスタムコンポーネント
-import GestureWord from '../../components/GestureWord';
+import SimpleGestureWord from '../../components/SimpleGestureWord';
 import GestureDropBox, { checkDropZone } from '../../components/GestureDropBox';
 
 // Core imports
@@ -140,6 +140,10 @@ export default function LessonDetailScreen() {
         setAvailableWords([...foundLesson.words]);
         setTimeStarted(Date.now());
         
+        // ドロップゾーンをリセット
+        dropZonesRef.current = {};
+        console.log(`[Lesson] Lesson loaded: ${foundLesson.title}, drop zones reset`);
+        
         // 進捗をロード
         loadLessonProgress(id);
       }
@@ -172,28 +176,65 @@ export default function LessonDetailScreen() {
   // ドロップゾーンの座標を登録
   const handleDropZoneMeasure = (id: string, x: number, y: number, width: number, height: number) => {
     dropZonesRef.current[id] = { x, y, width, height };
+    const zoneCount = Object.keys(dropZonesRef.current).length;
+    console.log(`[Lesson] Drop zone registered - ${id}:`, { x, y, width, height });
+    console.log(`[Lesson] All zones (${zoneCount}/5):`, dropZonesRef.current);
+    
+    // すべてのドロップゾーンが測定完了したらドラッグを有効化
+    if (zoneCount === 5) {
+      console.log(`[Lesson] All drop zones measured successfully! Drag & drop is ready.`);
+    }
   };
 
   // ドラッグ終了時のハンドラー
   const handleWordDrop = (word: Word, x: number, y: number) => {
+    console.log(`[Lesson] handleWordDrop called for "${word.text}" at (${x}, ${y})`);
+    
+    // ドロップゾーンが初期化されているか確認
+    const hasZones = Object.keys(dropZonesRef.current).length > 0;
+    console.log(`[Lesson] Has zones:`, hasZones, `Zone count:`, Object.keys(dropZonesRef.current).length);
+    
+    if (!hasZones) {
+      console.log(`[Lesson] No zones available, retrying in 200ms...`);
+      // ドロップゾーンがまだ初期化されていない場合は少し待ってリトライ
+      setTimeout(() => {
+        console.log(`[Lesson] Retrying drop detection...`);
+        const droppedZone = checkDropZone(x, y, dropZonesRef.current);
+        processDropResult(word, droppedZone);
+      }, 200);
+      return;
+    }
+    
     const droppedZone = checkDropZone(x, y, dropZonesRef.current);
+    processDropResult(word, droppedZone);
+  };
+
+  // ドロップ結果を処理
+  const processDropResult = (word: Word, droppedZone: string | null) => {
+    console.log(`[Lesson] processDropResult - word: "${word.text}", type: ${word.type}, droppedZone: ${droppedZone}`);
     
     if (droppedZone && droppedZone === word.type) {
       // 正しいボックスにドロップ
+      console.log(`[Lesson] Correct drop! Placing ${word.text} in ${droppedZone} box`);
       handleDrop(word, droppedZone as BoxType);
     } else if (droppedZone) {
       // 間違ったボックスにドロップ
+      console.log(`[Lesson] Wrong drop! ${word.text} (${word.type}) dropped in ${droppedZone}`);
       Alert.alert(
         '間違いです',
         `"${word.text}"は「${IMIJUN_LABELS[word.type]}」のボックスに入れてください。`,
         [{ text: 'OK' }]
       );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else {
+      console.log(`[Lesson] No drop zone detected for ${word.text}`);
     }
   };
 
   // 単語をボックスに配置
   const handleDrop = (word: Word, boxType: BoxType) => {
+    console.log(`[Lesson] handleDrop - placing "${word.text}" in ${boxType} box`);
+    
     // 単語を利用可能リストから削除
     setAvailableWords(prev => prev.filter(w => w.id !== word.id));
     
@@ -205,8 +246,11 @@ export default function LessonDetailScreen() {
           : box
       );
       
+      console.log(`[Lesson] Box states updated:`, newStates.map(s => ({ type: s.type, word: s.word?.text || 'empty' })));
+      
       // 全てのボックスが埋まったら自動チェック
       if (newStates.every(box => box.word !== null)) {
+        console.log(`[Lesson] All boxes filled, checking answer in 500ms...`);
         setTimeout(checkAnswer, 500);
       }
       
@@ -478,9 +522,24 @@ export default function LessonDetailScreen() {
             <Text style={styles.wordBankSubtitle}>
               単語を上のボックスにドラッグしてください
             </Text>
+            
+            {/* デバッグ情報 */}
+            {__DEV__ && (
+              <View style={styles.debugInfo}>
+                <Text style={styles.debugText}>
+                  デバッグ: ドロップゾーン {Object.keys(dropZonesRef.current).length}/5
+                </Text>
+                {Object.entries(dropZonesRef.current).map(([key, zone]) => (
+                  <Text key={key} style={styles.debugText}>
+                    {key}: ({Math.round(zone.x)}, {Math.round(zone.y)})
+                  </Text>
+                ))}
+              </View>
+            )}
+            
             <View style={styles.wordsContainer}>
               {availableWords.map((word) => (
-                <GestureWord
+                <SimpleGestureWord
                   key={word.id}
                   word={word}
                   colorScheme={ENHANCED_COLORS[word.type]}
@@ -985,5 +1044,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6b7280',
     textAlign: 'center',
+  },
+  
+  // Debug styles
+  debugInfo: {
+    backgroundColor: '#f3f4f6',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  debugText: {
+    fontSize: 10,
+    color: '#6b7280',
+    fontFamily: 'monospace',
   },
 });
